@@ -147,9 +147,9 @@ function _prepararProxies(_server, _cb) {
             { lista: _amostraHttp, teste: _testarProxyWs },
             { lista: _amostraSocks, teste: _testarProxySocks }
         ]) {
-            for (let _i = 0; _i < _grupo.lista.length; _i += 150) {
-                const _lote = _grupo.lista.slice(_i, _i + 150);
-                const _resultados = await Promise.all(_lote.map(function (_p) { return _grupo.teste(_p, _server, 5000); }));
+            for (let _i = 0; _i < _grupo.lista.length; _i += 400) {
+                const _lote = _grupo.lista.slice(_i, _i + 400);
+                const _resultados = await Promise.all(_lote.map(function (_p) { return _grupo.teste(_p, _server, 2500); }));
                 for (let _j = 0; _j < _lote.length; _j++) if (_resultados[_j]) _validos.push(_lote[_j]);
             }
         }

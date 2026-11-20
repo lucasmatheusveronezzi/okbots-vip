@@ -229,6 +229,8 @@ Bot.prototype = {
         } catch (_e) {}
         
         this.ws = new WebSocket(this.server, {
+            // Proxy que nao completa o handshake deve falhar rapido e ser trocado.
+            handshakeTimeout: 8000,
             headers: {
                 'Origin': this.origin,
                 'Accept-Encoding': 'gzip, deflate',
