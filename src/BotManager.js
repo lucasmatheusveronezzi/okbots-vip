@@ -56,8 +56,10 @@ class _0x9e4b {
             rOC: 0.3,
             rotationDir: 1
         };
-        this._0x4b6c = _0x3c2d.readFileSync("./config/proxies.txt", "utf8").split("\n").filter(_0x1a => !!_0x1a);
-        this._0x7d9e = _0x3c2d.readFileSync("./config/httpProxy.txt", "utf8").split("\n").filter(_0x2f => !!_0x2f);
+        // Proxies sao opcionais. Em deploy na nuvem os arquivos podem nao existir:
+        // nesse caso segue sem proxy em vez de quebrar a conexao do painel.
+        this._0x4b6c = this._lerLinhas("./config/proxies.txt");
+        this._0x7d9e = this._lerLinhas("./config/httpProxy.txt");
         this._0x5b7c = -1;
         // -1 = sem tag (nao forca a tag 12 em todos os bots).
         this._0x9d1e = -1;
@@ -77,6 +79,14 @@ class _0x9e4b {
         this._0xknownPlayers = {};
         this._0xbotSnakeIds = {};
         this._0x6e4a();
+    }
+
+    _lerLinhas(_arquivo) {
+        try {
+            return _0x3c2d.readFileSync(_arquivo, 'utf8').split(/\r?\n/).filter(function (linha) { return !!linha; });
+        } catch (e) {
+            return [];
+        }
     }
 
     _0x3f7b(_0x4c8d, _0x9e2f) {
