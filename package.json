@@ -14,6 +14,8 @@
     "ascii-art": "1.4.3",
     "chalk": "1.1.3",
     "colors": "1.1.2",
-    "socket.io": "2.0.3"
+    "socket.io": "2.0.3",
+    "https-proxy-agent": "2.1.0",
+    "socks": "1.1.10"
   }
 }
