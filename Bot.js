@@ -212,12 +212,15 @@ Bot.prototype = {
         const _0x3a1b = Math.random() >= 0.5;
         // Servidores custom locais/privados nao podem ser alcancados pelos
         // proxies publicos do config: conecta direto nesses casos.
-        const direct = this.bypassProxy || _okIsLocalServer(this.server) ||
-            !(this.proxies && this.proxies.length) || !(this.Proxies && this.Proxies.length);
+        const _lista = (this.Proxies && this.Proxies.length) ? this.Proxies
+            : ((this.proxies && this.proxies.length) ? this.proxies : []);
+        const direct = this.bypassProxy || _okIsLocalServer(this.server) || !_lista.length;
         let agent;
-        if (!direct && this.Proxies && this.Proxies.length) {
-            // Apenas proxies HTTP validados: os SOCKS publicos quase nunca funcionam.
-            agent = createHttpAgent(this.Proxies[~~(Math.random() * this.Proxies.length)]);
+        if (!direct) {
+            // Lista mista: SOCKS vem como ip:porta:tipo; HTTP como ip:porta.
+            const _escolhido = _lista[~~(Math.random() * _lista.length)];
+            const _ehSocks = String(_escolhido).split(':').length >= 3;
+            agent = _ehSocks ? createAgent(_escolhido) : createHttpAgent(_escolhido);
         }
         this._agentUsado = agent ? 'proxy' : 'direto';
         try {
