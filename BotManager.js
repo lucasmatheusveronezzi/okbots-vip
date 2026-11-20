@@ -1,6 +1,7 @@
 'use strict';
 const _0x7f4a = require('./Bot');
 const _0x3c2d = require('fs');
+const _0xnet = require('net');
 
 // Proxies gratuitos atualizados automaticamente pelo ProxyScrape (sem cartao).
 // A lista vem da API publica e substitui os arquivos estaticos, que ficam
@@ -8,6 +9,83 @@ const _0x3c2d = require('fs');
 let _proxiesSocks = [];
 let _proxiesHttp = [];
 let _atualizandoProxies = false;
+
+// Diagnostico dos bots (ultimos eventos) expos-to em /api/debug-bots.
+const _debugBots = [];
+function _registrarDebugBot(_msg) {
+    _debugBots.push({ ts: Date.now(), msg: String(_msg) });
+    if (_debugBots.length > 100) _debugBots.splice(0, _debugBots.length - 100);
+}
+function _listarDebugBots() { return _debugBots.slice(-50); }
+
+// Cache de proxies HTTP ja validados contra o servidor do jogo (por IP:porta).
+const _cacheProxiesValidos = new Map();
+
+function _hostPortaDoServidor(_server) {
+    try {
+        const _u = new URL(_server);
+        return {
+            host: _u.hostname.replace(/^\[|\]$/g, ''),
+            porta: Number(_u.port) || (_u.protocol === 'wss:' ? 443 : 80)
+        };
+    } catch (_e) {
+        return null;
+    }
+}
+
+function _testarProxyHttp(_proxy, _host, _porta, _ms) {
+    return new Promise(function (_res) {
+        const _m = String(_proxy).match(/^([^:]+):(\d+)$/);
+        if (!_m) return _res(false);
+        const _sock = _0xnet.connect({ host: _m[1], port: parseInt(_m[2], 10) });
+        let _done = false;
+        function _fin(_ok) {
+            if (_done) return;
+            _done = true;
+            clearTimeout(_timer);
+            try { _sock.destroy(); } catch (_e) {}
+            _res(_ok);
+        }
+        // Timeout explicito: sockets em CONNECT often nao disparam 'timeout'.
+        const _timer = setTimeout(function () { _fin(false); }, _ms);
+        _sock.setTimeout(_ms);
+        _sock.on('connect', function () {
+            _sock.write('CONNECT ' + _host + ':' + _porta + ' HTTP/1.1\r\nHost: ' + _host + ':' + _porta + '\r\n\r\n');
+        });
+        _sock.on('data', function (_d) { _fin(_d.toString().indexOf('200') !== -1); });
+        _sock.on('timeout', function () { _fin(false); });
+        _sock.on('error', function () { _fin(false); });
+    });
+}
+
+// Testa uma amostra dos proxies HTTP do ProxyScrape contra o IP do jogo e
+// devolve somente os que responderam CONNECT 200.
+function _prepararProxies(_server, _cb) {
+    console.log('[ProxyScrape] validando para ' + _server + ' (' + _proxiesHttp.length + ' HTTP)');
+    const _hp = _hostPortaDoServidor(_server);
+    if (!_hp || !_proxiesHttp.length) return _cb([]);
+    const _chave = _hp.host + ':' + _hp.porta;
+    const _cached = _cacheProxiesValidos.get(_chave);
+    if (_cached && Date.now() - _cached.ts < 5 * 60 * 1000) return _cb(_cached.lista);
+    const _amostra = _proxiesHttp.slice(0, 80);
+    Promise.all(_amostra.map(function (_p) { return _testarProxyHttp(_p, _hp.host, _hp.porta, 3000); }))
+        .then(function (_resultados) {
+            const _validos = _amostra.filter(function (_p, _i) { return _resultados[_i]; });
+            _cacheProxiesValidos.set(_chave, { ts: Date.now(), lista: _validos });
+            _registrarDebugBot('[ProxyScrape] ' + _validos.length + '/' + _amostra.length + ' HTTP validos para ' + _chave);
+            _cb(_validos);
+        })
+        .catch(function (_e) {
+            _registrarDebugBot('[ProxyScrape] falha na validacao: ' + (_e && _e.message ? _e.message : _e));
+            _cb([]);
+        });
+}
+
+function _statusProxies() {
+    const _cache = {};
+    for (const [_k, _v] of _cacheProxiesValidos) _cache[_k] = { validos: _v.lista.length, idade: Date.now() - _v.ts };
+    return { httpBrutos: _proxiesHttp.length, socksBrutos: _proxiesSocks.length, validados: _cache };
+}
 
 function _parseProxyLinha(_linha) {
     const _s = String(_linha || '').trim();
@@ -747,5 +825,10 @@ class _0x9e4b {
     }
 
 }
+
+_0x9e4b._registrarDebugBot = _registrarDebugBot;
+_0x9e4b._listarDebugBots = _listarDebugBots;
+_0x9e4b._prepararProxies = _prepararProxies;
+_0x9e4b._statusProxies = _statusProxies;
 
 module.exports = _0x9e4b;

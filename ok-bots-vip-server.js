@@ -99,7 +99,7 @@ const _servidorHttp = _http.createServer(function (_req, _res) {
     // Marcador de versao do deploy (serve para conferir se o Render atualizou).
     if (_url === '/api/versao') {
         return _json(_res, 200, {
-            versao: 'v3-direto-proxyscrape',
+            versao: 'v4-proxy-validado',
             proxiesAutomaticos: true,
             agora: Date.now()
         });
@@ -124,6 +124,57 @@ const _servidorHttp = _http.createServer(function (_req, _res) {
         _sock.on('timeout', function () { _fin(false, 'timeout'); });
         _sock.on('error', function (e) { _fin(false, e && e.message ? e.message : 'erro'); });
         return;
+    }
+
+    // Testa o handshake WebSocket completo, igual ao usado pelos bots.
+    if (_url === '/api/testar-ws') {
+        const _params = new URL(_req.url, 'http://localhost').searchParams;
+        const _alvo = _params.get('url') || 'ws://45.158.39.114:475/slither';
+        let _ws;
+        try {
+            const _WebSocket = require('ws');
+            _ws = new _WebSocket(_alvo, {
+                headers: {
+                    'Origin': 'https://slither.io',
+                    'Accept-Encoding': 'gzip, deflate',
+                    'Accept-Language': 'en-US,en;q=0.8',
+                    'Connection': 'Upgrade',
+                    'Host': new URL(_alvo).host,
+                    'Upgrade': 'websocket',
+                    'Sec-WebSocket-Version': '13',
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 6.3; Win64; x64) AppleWebKit/537.36 Chrome/localhost Safari/537.36'
+                },
+                handshakeTimeout: 8000
+            });
+        } catch (e) {
+            return _json(_res, 200, { url: _alvo, ok: false, detalhe: 'erro ao criar ws: ' + e.message });
+        }
+        let _respondido = false;
+        const _fin = function (_ok, _detalhe) {
+            if (_respondido) return;
+            _respondido = true;
+            try { _ws.terminate(); } catch (e) {}
+            return _json(_res, 200, { url: _alvo, ok: _ok, detalhe: _detalhe || '' });
+        };
+        _ws.on('open', function () { _fin(true, 'handshake abriu'); });
+        _ws.on('message', function (d) { _fin(true, 'recebeu ' + (d && d.length ? d.length : 0) + ' bytes'); });
+        _ws.on('error', function (e) { _fin(false, e && e.message ? e.message : 'erro no ws'); });
+        setTimeout(function () { _fin(false, 'timeout no handshake'); }, 10000);
+        return;
+    }
+
+    // Ultimos erros dos bots (diagnostico).
+    if (_url === '/api/debug-bots') {
+        const _BotManager = require('./src/BotManager');
+        return _json(_res, 200, {
+            erros: typeof _BotManager._listarDebugBots === 'function' ? _BotManager._listarDebugBots() : []
+        });
+    }
+
+    // Estado dos proxies automaticos (ProxyScrape + validacao CONNECT).
+    if (_url === '/api/proxies') {
+        const _BotManager = require('./src/BotManager');
+        return _json(_res, 200, typeof _BotManager._statusProxies === 'function' ? _BotManager._statusProxies() : {});
     }
 
     if (_url === '/admin' || _url === '/admin/') {

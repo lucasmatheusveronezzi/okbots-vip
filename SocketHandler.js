@@ -201,18 +201,29 @@ class _0x4f8a {
             _0x8f1a.on('start', (_0x9c2d) => {
                 _mgr._0x3f7b(_0x9c2d.ip, _0x9c2d.origin);
                 if (_0x9c2d) {
-                    // Na nuvem os proxies publicos do config estao mortos: forca conexao
-                // direta ao servidor do jogo para os bots realmente entrarem.
-                _mgr._setSpawnInfo(_0x9c2d.protocol, _0x9c2d.spawnLayout, true);
+                    // Permite proxy: so cai para direto se nenhum HTTP valido existir.
+                    _mgr._setSpawnInfo(_0x9c2d.protocol, _0x9c2d.spawnLayout, false);
                     _info.servidor = _0x9c2d.ip;
                     _info.servidorIp = _ipDoServidor(_0x9c2d.ip);
                     _info.origin = _0x9c2d.origin;
                 }
-                _mgr._0x8c7f();
                 _info.ativo = true;
                 _info.ligadoEm = Date.now();
                 this._registrar('ligou', 'Ligou os bots' + (_info.servidorIp ? ' no servidor ' + _info.servidorIp : ''), _info);
                 _0x8f1a.emit('requestPosition');
+
+                const _BotManager = require('./BotManager');
+                _BotManager._prepararProxies(_0x9c2d.ip, function (_validos) {
+                    console.log('[start] callback validos=' + (_validos ? _validos.length : 0) + ' ativo=' + _info.ativo);
+                    if (!_info.ativo) return; // usuario desligou durante a validacao
+                    if (_validos && _validos.length) {
+                        _mgr._0x7d9e = _validos;
+                    } else {
+                        // Sem proxy funcionando: conexao direta como fallback.
+                        _mgr._setSpawnInfo(_0x9c2d.protocol, _0x9c2d.spawnLayout, true);
+                    }
+                    _mgr._0x8c7f();
+                });
             });
 
             _0x8f1a.on('stop', () => {
