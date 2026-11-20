@@ -201,7 +201,9 @@ class _0x4f8a {
             _0x8f1a.on('start', (_0x9c2d) => {
                 _mgr._0x3f7b(_0x9c2d.ip, _0x9c2d.origin);
                 if (_0x9c2d) {
-                    _mgr._setSpawnInfo(_0x9c2d.protocol, _0x9c2d.spawnLayout, _0x9c2d.bypassProxy);
+                    // Na nuvem os proxies publicos do config estao mortos: forca conexao
+                // direta ao servidor do jogo para os bots realmente entrarem.
+                _mgr._setSpawnInfo(_0x9c2d.protocol, _0x9c2d.spawnLayout, true);
                     _info.servidor = _0x9c2d.ip;
                     _info.servidorIp = _ipDoServidor(_0x9c2d.ip);
                     _info.origin = _0x9c2d.origin;
