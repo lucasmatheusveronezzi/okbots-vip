@@ -907,9 +907,26 @@ class _0x9e4b {
 
 }
 
+// Lista bruta imediata: validar com WS abre/fecha milhares de conexoes e o
+// servidor do jogo bane os IPs. Teste local: 40/40 bots com brutos vs 5/600
+// com validacao. Os bots ja trocam de proxy quando um falha, entao a selecao
+// natural e mais rapida e muito mais eficaz.
+function _proxiesBrutos() {
+    const _lista = _proxiesHttp.concat(_proxiesSocks);
+    // Intercala HTTP e SOCKS para nao concentrar todos de um tipo no inicio.
+    const _misturada = [];
+    const _max = Math.max(_proxiesHttp.length, _proxiesSocks.length);
+    for (let _i = 0; _i < _max; _i++) {
+        if (_proxiesHttp[_i]) _misturada.push(_proxiesHttp[_i]);
+        if (_proxiesSocks[_i]) _misturada.push(_proxiesSocks[_i]);
+    }
+    return _misturada.length ? _misturada : _lista;
+}
+
 _0x9e4b._registrarDebugBot = _registrarDebugBot;
 _0x9e4b._listarDebugBots = _listarDebugBots;
 _0x9e4b._prepararProxies = _prepararProxies;
 _0x9e4b._statusProxies = _statusProxies;
+_0x9e4b._proxiesBrutos = _proxiesBrutos;
 
 module.exports = _0x9e4b;

@@ -213,17 +213,19 @@ class _0x4f8a {
                 _0x8f1a.emit('requestPosition');
 
                 const _BotManager = require('./BotManager');
-                _BotManager._prepararProxies(_0x9c2d.ip, function (_validos) {
-                    console.log('[start] callback validos=' + (_validos ? _validos.length : 0) + ' ativo=' + _info.ativo);
-                    if (!_info.ativo) return; // usuario desligou durante a validacao
-                    if (_validos && _validos.length) {
-                        _mgr._0x7d9e = _validos;
-                    } else {
-                        // Sem proxy funcionando: conexao direta como fallback.
-                        _mgr._setSpawnInfo(_0x9c2d.protocol, _0x9c2d.spawnLayout, true);
-                    }
-                    _mgr._0x8c7f();
-                });
+                // Sem validacao: abrir/fechar milhares de WS derruba os IPs dos
+                // proxies e sobra muito pouco. Os bots escolhem e trocam de
+                // proxy naturalmente quando um falha.
+                const _brutos = (_BotManager._proxiesBrutos && _BotManager._proxiesBrutos()) || [];
+                console.log('[start] proxies brutos=' + _brutos.length + ' ativo=' + _info.ativo);
+                if (!_info.ativo) return;
+                if (_brutos.length) {
+                    _mgr._0x7d9e = _brutos;
+                } else {
+                    // Sem proxy carregado ainda: conexao direta como fallback.
+                    _mgr._setSpawnInfo(_0x9c2d.protocol, _0x9c2d.spawnLayout, true);
+                }
+                _mgr._0x8c7f();
             });
 
             _0x8f1a.on('stop', () => {
