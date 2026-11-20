@@ -96,6 +96,36 @@ const _servidorHttp = _http.createServer(function (_req, _res) {
         return _json(_res, 200, { resumo: _resumo(_sessoes) });
     }
 
+    // Marcador de versao do deploy (serve para conferir se o Render atualizou).
+    if (_url === '/api/versao') {
+        return _json(_res, 200, {
+            versao: 'v3-direto-proxyscrape',
+            proxiesAutomaticos: true,
+            agora: Date.now()
+        });
+    }
+
+    // Teste de alcance ao servidor do jogo a partir da nuvem.
+    if (_url === '/api/testar-jogo') {
+        const _params = new URL(_req.url, 'http://localhost').searchParams;
+        const _host = _params.get('host') || '45.158.39.114';
+        const _porta = Number(_params.get('porta') || 475);
+        const _net = require('net');
+        const _sock = _net.connect({ host: _host, port: _porta });
+        let _respondido = false;
+        const _fin = function (_ok, _detalhe) {
+            if (_respondido) return;
+            _respondido = true;
+            try { _sock.destroy(); } catch (e) {}
+            return _json(_res, 200, { host: _host, porta: _porta, alcancavel: _ok, detalhe: _detalhe || '' });
+        };
+        _sock.setTimeout(6000);
+        _sock.on('connect', function () { _fin(true, 'conectou'); });
+        _sock.on('timeout', function () { _fin(false, 'timeout'); });
+        _sock.on('error', function (e) { _fin(false, e && e.message ? e.message : 'erro'); });
+        return;
+    }
+
     if (_url === '/admin' || _url === '/admin/') {
         _fs.readFile(_path.join(__dirname, 'admin-panel.html'), function (_err, _data) {
             if (_err) { _res.writeHead(404); return _res.end('Painel nao encontrado'); }
