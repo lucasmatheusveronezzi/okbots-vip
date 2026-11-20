@@ -99,7 +99,7 @@ const _servidorHttp = _http.createServer(function (_req, _res) {
     // Marcador de versao do deploy (serve para conferir se o Render atualizou).
     if (_url === '/api/versao') {
         return _json(_res, 200, {
-            versao: 'v4-proxy-validado',
+            versao: 'v5-arquivos-na-raiz',
             proxiesAutomaticos: true,
             agora: Date.now()
         });
@@ -165,7 +165,7 @@ const _servidorHttp = _http.createServer(function (_req, _res) {
 
     // Ultimos erros dos bots (diagnostico).
     if (_url === '/api/debug-bots') {
-        const _BotManager = require('./src/BotManager');
+        const _BotManager = require('./BotManager');
         return _json(_res, 200, {
             erros: typeof _BotManager._listarDebugBots === 'function' ? _BotManager._listarDebugBots() : []
         });
@@ -173,7 +173,7 @@ const _servidorHttp = _http.createServer(function (_req, _res) {
 
     // Estado dos proxies automaticos (ProxyScrape + validacao CONNECT).
     if (_url === '/api/proxies') {
-        const _BotManager = require('./src/BotManager');
+        const _BotManager = require('./BotManager');
         return _json(_res, 200, typeof _BotManager._statusProxies === 'function' ? _BotManager._statusProxies() : {});
     }
 
@@ -220,8 +220,8 @@ _servidorHttp.listen(PORT, function () {
     console.log('[Painel] http://localhost:' + PORT + '/admin');
 });
 
-const _0x2f9a = require('./src/BotManager');
-const _0x6d4e = require('./src/SocketHandler');
+const _0x2f9a = require('./BotManager');
+const _0x6d4e = require('./SocketHandler');
 
 var _0x3e2f = {};
 var _0x8f1a = false;
