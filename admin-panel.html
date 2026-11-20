@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>OK BOTS VIP — Painel de monitoramento</title>
+<style>
+:root{--bg:#0b0f19;--card:#141a2a;--card2:#1b2338;--txt:#e8ecf7;--mut:#93a0bd;--green:#22c55e;--red:#ef4444;--amber:#f59e0b;--blue:#3b82f6;--border:#28324d}
+*{box-sizing:border-box}
+body{margin:0;background:radial-gradient(900px 500px at 15% -10%,#1c2540 0%,transparent 60%),var(--bg);color:var(--txt);font:14px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;min-height:100vh}
+.wrap{max-width:1180px;margin:0 auto;padding:28px 20px 60px}
+header{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:18px}
+h1{margin:0;font-size:22px;letter-spacing:.3px}
+h1 span{color:var(--green)}
+.sub{color:var(--mut);font-size:13px;margin-top:4px}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;margin-bottom:20px}
+.card{background:linear-gradient(160deg,var(--card2),var(--card));border:1px solid var(--border);border-radius:16px;padding:18px 20px}
+.card .lbl{color:var(--mut);font-size:12px;text-transform:uppercase;letter-spacing:.8px}
+.card .val{font-size:34px;font-weight:800;margin-top:6px;line-height:1}
+.card.g .val{color:var(--green)} .card.b .val{color:var(--blue)} .card.a .val{color:var(--amber)}
+.panel{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:20px;margin-bottom:20px;overflow:hidden}
+.panel h2{margin:0 0 4px;font-size:15px;color:var(--mut);text-transform:uppercase;letter-spacing:.7px}
+.dica{color:var(--mut);font-size:11px;margin:0 0 14px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;color:var(--mut);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.6px;padding:10px 8px;border-bottom:1px solid var(--border)}
+td{padding:11px 8px;border-bottom:1px solid #1e2740;vertical-align:top}
+tr:last-child td{border-bottom:0}
+.pill{display:inline-block;padding:3px 9px;border-radius:99px;font-size:11px;font-weight:700}
+.on{background:rgba(34,197,94,.15);color:var(--green)} .off{background:rgba(239,68,68,.13);color:var(--red)}
+.atk{background:rgba(245,158,11,.15);color:var(--amber)}
+.mut{color:var(--mut)} .mono{font-family:ui-monospace,Consolas,monospace;font-size:12px}
+.ip{color:#7dd3fc;font-weight:700}
+.ev{padding:8px 0;border-bottom:1px solid #1e2740;display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
+.ev:last-child{border-bottom:0}
+.ev time{color:var(--mut);font-size:11px;min-width:62px;font-family:ui-monospace,monospace}
+.vazio{color:var(--mut);padding:14px 0}
+.live{color:var(--green);font-size:12px;font-weight:700}
+.live:before{content:'●';margin-right:6px;animation:p 1.6s infinite}
+@keyframes p{50%{opacity:.25}}
+@media(max-width:760px){th:nth-child(4),td:nth-child(4),th:nth-child(7),td:nth-child(7){display:none}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1>🐍 OK BOTS <span>VIP</span> — Painel</h1>
+      <div class="sub">Acompanhe quem está usando os bots em tempo real</div>
+    </div>
+    <span class="live" id="live">AO VIVO</span>
+  </header>
+
+  <div class="cards">
+    <div class="card b"><div class="lbl">Pessoas conectadas</div><div class="val" id="c-conectados">0</div></div>
+    <div class="card g"><div class="lbl">Com bots ligados</div><div class="val" id="c-ativos">0</div></div>
+    <div class="card a"><div class="lbl">Total de bots ativos</div><div class="val" id="c-bots">0</div></div>
+    <div class="card"><div class="lbl">IPs do jogo</div><div class="val" id="c-servidores">0</div></div>
+  </div>
+
+  <div class="panel">
+    <h2>🎯 Indo para pessoa</h2>
+    <p class="dica">Quantos bots estão indo atrás de cada alvo e em qual IP do jogo.</p>
+    <table>
+      <thead><tr><th>Alvo</th><th>Bots indo</th><th>Pessoas</th><th>IP do jogo</th></tr></thead>
+      <tbody id="ataques"></tbody>
+    </table>
+  </div>
+
+  <div class="panel">
+    <h2>Sessões</h2>
+    <p class="dica">Por privacidade, o IP da pessoa não aparece — apenas o IP do servidor do jogo.</p>
+    <table>
+      <thead><tr><th>IP do jogo</th><th>Status</th><th>Bots</th><th>Limite</th><th>Alvo</th><th>Indo</th><th>Conectado há</th></tr></thead>
+      <tbody id="linhas"></tbody>
+    </table>
+  </div>
+
+  <div class="panel">
+    <h2>Atividade recente</h2>
+    <p class="dica">Somente o IP do jogo é registrado nos eventos.</p>
+    <div id="eventos"></div>
+  </div>
+</div>
+
+<script>
+'use strict';
+var $ = function(id){ return document.getElementById(id); };
+function txt(el, s){ el.textContent = (s === undefined || s === null || s === '') ? '—' : String(s); }
+
+function tempo(seg){
+  seg = Math.max(0, Math.floor(seg || 0));
+  var h = Math.floor(seg/3600), m = Math.floor((seg%3600)/60), s = seg%60;
+  return (h ? h+'h ' : '') + (m ? m+'m ' : '') + s + 's';
+}
+
+function render(d){
+  txt($('c-conectados'), d.resumo.conectados);
+  txt($('c-ativos'), d.resumo.comBots);
+  txt($('c-bots'), d.resumo.bots);
+  txt($('c-servidores'), d.resumo.servidoresUnicos);
+
+  var ta = $('ataques'); ta.innerHTML = '';
+  if (!d.ataques.length){
+    var tr0 = ta.insertRow(); var td0 = tr0.insertCell(); td0.colSpan = 4;
+    td0.className = 'vazio'; td0.textContent = 'Ninguém está indo atrás de alguém no momento.';
+  }
+  d.ataques.forEach(function(a){
+    var tr = ta.insertRow();
+    var c1 = tr.insertCell(); c1.textContent = a.alvoNome || ('Jogador #' + a.alvoId); c1.className = 'atk';
+    var c2 = tr.insertCell(); c2.textContent = a.bots; c2.style.fontWeight = '800';
+    txt(tr.insertCell(), a.pessoas);
+    var c4 = tr.insertCell(); c4.className = 'mono ip'; c4.textContent = a.servidoresIp.join(', ') || '—';
+  });
+
+  var tb = $('linhas'); tb.innerHTML = '';
+  if (!d.sessoes.length){
+    var tr = tb.insertRow(); var td = tr.insertCell(); td.colSpan = 7;
+    td.className = 'vazio'; td.textContent = 'Nenhuma pessoa conectada no momento.';
+  }
+  d.sessoes.forEach(function(s){
+    var tr = tb.insertRow();
+    var a = tr.insertCell(); a.className = 'mono ip'; a.textContent = s.servidorIp || '—';
+    var b = tr.insertCell();
+    var pill = document.createElement('span');
+    pill.className = 'pill ' + (s.botsAoAlvo > 0 ? 'atk' : (s.ativo ? 'on' : 'off'));
+    pill.textContent = s.botsAoAlvo > 0 ? (' Indo (' + s.botsAoAlvo + ')') : (s.ativo ? '● LIGADO' : '○ PARADO');
+    b.appendChild(pill);
+    txt(tr.insertCell(), s.bots);
+    txt(tr.insertCell(), s.limite);
+    txt(tr.insertCell(), s.alvoNome || '—');
+    txt(tr.insertCell(), s.botsAoAlvo);
+    txt(tr.insertCell(), tempo(s.segundosConectado));
+  });
+
+  var box = $('eventos'); box.innerHTML = '';
+  if (!d.eventos.length){
+    var v = document.createElement('div'); v.className='vazio'; v.textContent='Sem atividade registrada ainda.';
+    box.appendChild(v);
+  }
+  d.eventos.slice().reverse().forEach(function(e){
+    var div = document.createElement('div'); div.className = 'ev';
+    var t = document.createElement('time');
+    var dt = new Date(e.ts);
+    t.textContent = String(dt.getHours()).padStart(2,'0') + ':' + String(dt.getMinutes()).padStart(2,'0') + ':' + String(dt.getSeconds()).padStart(2,'0');
+    div.appendChild(t);
+    var icone = e.tipo === 'ligou' ? '🟢' : e.tipo === 'desligou' ? '⏹️' : e.tipo === 'atacou' ? '🎯' : e.tipo === 'saiu' ? '🚪' : '🔌';
+    var msg = document.createElement('span');
+    msg.textContent = icone + ' ' + (e.texto || e.tipo) + (e.servidorIp ? ' · IP do jogo: ' + e.servidorIp : '');
+    div.appendChild(msg);
+    box.appendChild(div);
+  });
+}
+
+async function carregar(){
+  try{
+    var r = await fetch('/api/stats', { cache: 'no-store' });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    render(await r.json());
+    $('live').textContent = 'AO VIVO'; $('live').style.color = '';
+  }catch(e){
+    $('live').textContent = 'SEM CONEXÃO'; $('live').style.color = '#ef4444';
+  }
+}
+
+carregar();
+setInterval(carregar, 3000);
+</script>
+</body>
+</html>

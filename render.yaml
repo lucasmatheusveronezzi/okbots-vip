@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: okbots-vip
+    env: node
+    region: frankfurt
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/public

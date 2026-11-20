@@ -1,0 +1,19 @@
+{
+  "name": "ok-bots-vip-server",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Servidor dos bots OK BOTS VIP",
+  "main": "ok-bots-vip-server.js",
+  "scripts": {
+    "start": "node ok-bots-vip-server.js"
+  },
+  "engines": {
+    "node": "18.x"
+  },
+  "dependencies": {
+    "ascii-art": "1.4.3",
+    "chalk": "1.1.3",
+    "colors": "1.1.2",
+    "socket.io": "2.0.3"
+  }
+}
