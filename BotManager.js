@@ -2,6 +2,7 @@
 const _0x7f4a = require('./Bot');
 const _0x3c2d = require('fs');
 const _0xnet = require('net');
+const _0xws = require('ws');
 
 // Proxies gratuitos atualizados automaticamente pelo ProxyScrape (sem cartao).
 // A lista vem da API publica e substitui os arquivos estaticos, que ficam
@@ -58,21 +59,56 @@ function _testarProxyHttp(_proxy, _host, _porta, _ms) {
     });
 }
 
-// Testa uma amostra dos proxies HTTP do ProxyScrape contra o IP do jogo e
-// devolve somente os que responderam CONNECT 200.
+// Teste real: abre o MESMO WebSocket que os bots abrem, pelo proxy. CONNECT
+// 200 nao garante que o handshake do jogo funcione (foi o que derrubou os bots).
+function _testarProxyWs(_proxy, _serverUrl, _ms) {
+    return new Promise(function (_res) {
+        let _agent, _ws;
+        try {
+            const _HttpsProxyAgent = require('https-proxy-agent');
+            _agent = new _HttpsProxyAgent('http://' + _proxy);
+        } catch (_e) { return _res(false); }
+        let _done = false;
+        function _fin(_ok) {
+            if (_done) return;
+            _done = true;
+            clearTimeout(_timer);
+            try { if (_ws) _ws.terminate(); } catch (_e) {}
+            _res(_ok);
+        }
+        const _timer = setTimeout(function () { _fin(false); }, _ms);
+        try {
+            _ws = new _0xws(_serverUrl, {
+                agent: _agent,
+                handshakeTimeout: _ms,
+                headers: {
+                    'Origin': 'https://slither.io',
+                    'Host': new URL(_serverUrl).host
+                }
+            });
+            _ws.on('open', function () { _fin(true); });
+            _ws.on('error', function () { _fin(false); });
+        } catch (_e) { _fin(false); }
+    });
+}
+
+// Valida os proxies HTTP com um handshake WebSocket real contra o servidor do
+// jogo e devolve somente os que funcionam de fato.
 function _prepararProxies(_server, _cb) {
-    console.log('[ProxyScrape] validando para ' + _server + ' (' + _proxiesHttp.length + ' HTTP)');
+    console.log('[ProxyScrape] validando WS para ' + _server + ' (' + _proxiesHttp.length + ' HTTP)');
     const _hp = _hostPortaDoServidor(_server);
     if (!_hp || !_proxiesHttp.length) return _cb([]);
-    const _chave = _hp.host + ':' + _hp.porta;
+    let _caminho = '';
+    try { _caminho = new URL(_server).pathname; } catch (_e) {}
+    const _chave = _hp.host + ':' + _hp.porta + _caminho;
     const _cached = _cacheProxiesValidos.get(_chave);
     if (_cached && Date.now() - _cached.ts < 5 * 60 * 1000) return _cb(_cached.lista);
-    const _amostra = _proxiesHttp.slice(0, 80);
-    Promise.all(_amostra.map(function (_p) { return _testarProxyHttp(_p, _hp.host, _hp.porta, 3000); }))
+    const _amostra = _proxiesHttp.slice(0, 120);
+    Promise.all(_amostra.map(function (_p) { return _testarProxyWs(_p, _server, 7000); }))
         .then(function (_resultados) {
             const _validos = _amostra.filter(function (_p, _i) { return _resultados[_i]; });
             _cacheProxiesValidos.set(_chave, { ts: Date.now(), lista: _validos });
-            _registrarDebugBot('[ProxyScrape] ' + _validos.length + '/' + _amostra.length + ' HTTP validos para ' + _chave);
+            _registrarDebugBot('[ProxyScrape] ' + _validos.length + '/' + _amostra.length + ' HTTP validos (WS) para ' + _chave);
             _cb(_validos);
         })
         .catch(function (_e) {
