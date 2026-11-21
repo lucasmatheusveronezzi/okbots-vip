@@ -384,7 +384,7 @@ class _0x9e4b {
                 _0x2c4b.moveTo(_0x3b6d._0x6d9c, _0x3b6d._0x7b4f);
             }
             _0x3b6d._0x2a7c.push(_0x2c4b);
-        }, 1);
+        }, 5);
     }
 
     _0xstopAllBots() {
