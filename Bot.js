@@ -231,17 +231,10 @@ Bot.prototype = {
         this.ws = new WebSocket(this.server, {
             // Proxy que nao completa o handshake deve falhar rapido e ser trocado.
             handshakeTimeout: 8000,
+            // Headers minimos: o modulo ws ja gera Host/Upgrade/Sec-WebSocket-*.
+            // Forcar Host/Connection/Upgrade conflita com o proxy e gerava 403.
             headers: {
                 'Origin': this.origin,
-                'Accept-Encoding': 'gzip, deflate',
-                'Accept-Language': 'en-US,en;q=0.8',
-                'Cache-Control': 'no-cache',
-                'Connection': 'Upgrade',
-                'Host': getHost(this.server),
-                'Pragma': 'no-cache',
-                'Upgrade': 'websocket',
-                'Sec-WebSocket-Version': '13',
-                'Sec-WebSocket-Extensions': 'permessage-deflate; client_max_window_bits',
                 'User-Agent': 'Mozilla/5.0 (Windows NT 6.3; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/localhost Safari/537.36'
             },
             agent: agent
