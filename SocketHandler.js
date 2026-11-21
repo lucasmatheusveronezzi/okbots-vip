@@ -201,8 +201,10 @@ class _0x4f8a {
             _0x8f1a.on('start', (_0x9c2d) => {
                 _mgr._0x3f7b(_0x9c2d.ip, _0x9c2d.origin);
                 if (_0x9c2d) {
-                    // Permite proxy: so cai para direto se nenhum HTTP valido existir.
-                    _mgr._setSpawnInfo(_0x9c2d.protocol, _0x9c2d.spawnLayout, false);
+                    // Respeita bypassProxy enviado pela extensao/teste. Proxies
+                    // gratuitos estao instaveis; conexao direta do Render pode
+                    // sustentar muito mais bots (handshake direto ja validado).
+                    _mgr._setSpawnInfo(_0x9c2d.protocol, _0x9c2d.spawnLayout, !!_0x9c2d.bypassProxy);
                     _info.servidor = _0x9c2d.ip;
                     _info.servidorIp = _ipDoServidor(_0x9c2d.ip);
                     _info.origin = _0x9c2d.origin;
