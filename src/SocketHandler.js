@@ -873,9 +873,10 @@ class _0x4f8a {
                     // Sessoes de teste marcadas com "teste-pago" continuam na
                     // linha paga, mas com teto baixo: evita esgotar portas
                     // locais sem precisar de ajuste de UAC/TCP no Windows.
-                    const _ehTestePago = (_mgr._0xbotNames || []).some(function (n) {
-                        return /teste-pago/i.test(String(n || ''));
-                    });
+                    const _ehTestePago = /teste-pago/i.test(String(_info.uid || '')) ||
+                        (_mgr._0xbotNames || []).some(function (n) {
+                            return /teste-pago/i.test(String(n || ''));
+                        });
                     _info.limite = _ehTestePago
                         ? Math.min(_0xdata.limit, 700)
                         : _ehDivulgacao
