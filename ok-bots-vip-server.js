@@ -102,7 +102,7 @@ const _servidorHttp = _http.createServer(function (_req, _res) {
     // Marcador de versao do deploy (serve para conferir se o Render atualizou).
     if (_url === '/api/versao') {
         return _json(_res, 200, {
-            versao: 'v5-limite-uid',
+            versao: 'v6-cpu-otimizado',
             proxiesAutomaticos: true,
             agora: Date.now()
         });

@@ -328,7 +328,6 @@ Bot.prototype = {
                 'Pragma': 'no-cache',
                 'Upgrade': 'websocket',
                 'Sec-WebSocket-Version': '13',
-                'Sec-WebSocket-Extensions': 'permessage-deflate; client_max_window_bits',
                 'User-Agent': 'Mozilla/5.0 (Windows NT 6.3; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/localhost Safari/537.36'
             },
             agent: agent

@@ -10,4 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Ping no servidor
-        run: curl -fsS --max-time 20 https://okbots-vip.onrender.com/api/stats > /dev/null || true
+        run: |
+          URL="${{ vars.RENDER_URL }}"
+          if [ -z "$URL" ]; then echo "RENDER_URL nao configurado"; exit 1; fi
+          curl -fsS --max-time 20 "$URL/api/stats" > /dev/null && echo "OK" || echo "FALHOU"

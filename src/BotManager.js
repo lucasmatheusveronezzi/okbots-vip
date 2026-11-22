@@ -691,7 +691,7 @@ class _0x9e4b {
                 this._0x6d9c = this._0x4c6f;
                 this._0x7b4f = this._0x8a2e;
             }
-        }, 1);
+        }, 10);
     }
 
     // Troca as listas de proxy SEM parar os bots. Bots que ja entraram no jogo
