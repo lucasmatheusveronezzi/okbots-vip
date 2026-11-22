@@ -87,6 +87,9 @@ const _servidorHttp = _http.createServer(function (_req, _res) {
             sessoes: _sessoes,
             ataques: _ataques(_sessoes),
             eventos: _eventos.slice(-80),
+            donoFixo: _painelHandler && _painelHandler.getDonoFixo ? _painelHandler.getDonoFixo() : null,
+            semVip: _painelHandler && _painelHandler.getSemVip ? _painelHandler.getSemVip() : [],
+            vipTodos: _painelHandler && _painelHandler.getVipTodos ? _painelHandler.getVipTodos() : null,
             agora: Date.now()
         });
     }
@@ -99,10 +102,51 @@ const _servidorHttp = _http.createServer(function (_req, _res) {
     // Marcador de versao do deploy (serve para conferir se o Render atualizou).
     if (_url === '/api/versao') {
         return _json(_res, 200, {
-            versao: 'v5-arquivos-na-raiz',
+            versao: 'v4-proxy-validado',
             proxiesAutomaticos: true,
             agora: Date.now()
         });
+    }
+
+    // Interruptor do teste "sem proxy": /api/ip-direto?ligado=1&todos=1
+    // Para desligar: /api/ip-direto?ligado=0
+    if (_url === '/api/ip-direto') {
+        const _p = new URL(_req.url, 'http://localhost').searchParams;
+        const _op = {};
+        if (_p.has('ligado')) _op.ligado = _p.get('ligado') !== '0';
+        if (_p.has('todos')) _op.todos = _p.get('todos') !== '0';
+        if (_p.get('ip')) _op.ip = _p.get('ip');
+        const _modo = _painelHandler ? _painelHandler.setModoIpDireto(_op) : null;
+        return _json(_res, 200, { ok: !!_modo, modo: _modo });
+    }
+
+    // Fixa a linha paga na sessao escolhida no painel. O painel ja e aberto
+    // sem senha, inclusive pelo tunel; por isso o botao precisa funcionar
+    // tanto no localhost quanto na URL publica.
+    if (_url === '/api/admin/vip') {
+        const _p = new URL(_req.url, 'http://localhost').searchParams;
+        // desfixar=<id> tira a sessao do pago e a coloca nos gratis.
+        if (_p.has('desfixar') && _painelHandler && _painelHandler.desfixarDono) {
+            _painelHandler.desfixarDono(_p.get('desfixar'));
+            return _json(_res, 200, {
+                ok: true,
+                donoFixo: _painelHandler.getDonoFixo ? _painelHandler.getDonoFixo() : null
+            });
+        }
+        const _id = _p.get('id') || '';
+        const _fixado = _painelHandler ? _painelHandler.fixarDono(_id || null) : null;
+        return _json(_res, 200, { ok: true, donoFixo: _fixado });
+    }
+
+    // Liga/desliga a linha paga rotativa para TODAS as pessoas.
+    // Ex.: /api/admin/vip-todos?ligado=1  |  ?ligado=0 para voltar ao dono.
+    if (_url === '/api/admin/vip-todos') {
+        const _p = new URL(_req.url, 'http://localhost').searchParams;
+        const _op = {};
+        if (_p.has('ligado')) _op.ligado = _p.get('ligado') !== '0';
+        const _modo = _painelHandler && _painelHandler.setVipTodos
+            ? _painelHandler.setVipTodos(_op) : null;
+        return _json(_res, 200, { ok: !!_modo, vipTodos: _modo });
     }
 
     // Teste de alcance ao servidor do jogo a partir da nuvem.
@@ -165,7 +209,7 @@ const _servidorHttp = _http.createServer(function (_req, _res) {
 
     // Ultimos erros dos bots (diagnostico).
     if (_url === '/api/debug-bots') {
-        const _BotManager = require('./BotManager');
+        const _BotManager = require('./src/BotManager');
         return _json(_res, 200, {
             erros: typeof _BotManager._listarDebugBots === 'function' ? _BotManager._listarDebugBots() : []
         });
@@ -173,7 +217,7 @@ const _servidorHttp = _http.createServer(function (_req, _res) {
 
     // Estado dos proxies automaticos (ProxyScrape + validacao CONNECT).
     if (_url === '/api/proxies') {
-        const _BotManager = require('./BotManager');
+        const _BotManager = require('./src/BotManager');
         return _json(_res, 200, typeof _BotManager._statusProxies === 'function' ? _BotManager._statusProxies() : {});
     }
 
@@ -220,8 +264,8 @@ _servidorHttp.listen(PORT, function () {
     console.log('[Painel] http://localhost:' + PORT + '/admin');
 });
 
-const _0x2f9a = require('./BotManager');
-const _0x6d4e = require('./SocketHandler');
+const _0x2f9a = require('./src/BotManager');
+const _0x6d4e = require('./src/SocketHandler');
 
 var _0x3e2f = {};
 var _0x8f1a = false;

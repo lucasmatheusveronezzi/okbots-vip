@@ -36,6 +36,9 @@ tr:last-child td{border-bottom:0}
 .vazio{color:var(--mut);padding:14px 0}
 .live{color:var(--green);font-size:12px;font-weight:700}
 .live:before{content:'●';margin-right:6px;animation:p 1.6s infinite}
+.btn{background:var(--card2);color:var(--txt);border:1px solid var(--border);border-radius:8px;padding:5px 9px;font:700 11px/1 system-ui;cursor:pointer;margin-top:5px}
+.btn:hover{border-color:var(--green);color:var(--green)}
+.btn.pago{background:rgba(34,197,94,.15);color:var(--green);border-color:var(--green)}
 @keyframes p{50%{opacity:.25}}
 @media(max-width:760px){th:nth-child(4),td:nth-child(4),th:nth-child(7),td:nth-child(7){display:none}}
 </style>
@@ -70,7 +73,7 @@ tr:last-child td{border-bottom:0}
     <h2>Sessões</h2>
     <p class="dica">Por privacidade, o IP da pessoa não aparece — apenas o IP do servidor do jogo.</p>
     <table>
-      <thead><tr><th>IP do jogo</th><th>Status</th><th>Bots</th><th>Limite</th><th>Alvo</th><th>Indo</th><th>Conectado há</th></tr></thead>
+      <thead><tr><th>IP do jogo</th><th>Status</th><th>Bots</th><th>Limite</th><th>Alvo</th><th>Indo</th><th>Conectado há</th><th>Proxy</th></tr></thead>
       <tbody id="linhas"></tbody>
     </table>
   </div>
@@ -114,7 +117,7 @@ function render(d){
 
   var tb = $('linhas'); tb.innerHTML = '';
   if (!d.sessoes.length){
-    var tr = tb.insertRow(); var td = tr.insertCell(); td.colSpan = 7;
+    var tr = tb.insertRow(); var td = tr.insertCell(); td.colSpan = 8;
     td.className = 'vazio'; td.textContent = 'Nenhuma pessoa conectada no momento.';
   }
   d.sessoes.forEach(function(s){
@@ -130,6 +133,31 @@ function render(d){
     txt(tr.insertCell(), s.alvoNome || '—');
     txt(tr.insertCell(), s.botsAoAlvo);
     txt(tr.insertCell(), tempo(s.segundosConectado));
+    var pc = tr.insertCell();
+    var pf = document.createElement('div');
+    pf.className = 'mono mut';
+    pf.textContent = s.fonteProxies || '—';
+    pc.appendChild(pf);
+    var botao = document.createElement('button');
+    // UID estavel da extensao e a chave salva; cai para o ID do socket nas
+    // sessoes antigas que ainda nao enviam UID.
+    var chave = s.uid || s.id;
+    var fixo = (d.donoFixo === chave || d.donoFixo === s.id);
+    var pago = String(s.fonteProxies || '').indexOf('vip') === 0;
+    botao.className = 'btn' + (fixo ? ' pago' : (pago ? ' pago' : ''));
+    botao.textContent = fixo ? 'Desfixar' : (pago ? '✓ Pago (automático)' : 'Fixar pago');
+    botao.onclick = async function(){
+      if (!confirm(fixo ? 'Desfixar e voltar ao automático?' : 'Fixar a linha paga nesta sessão?')) return;
+      try{
+        var url = fixo
+          ? ('/api/admin/vip?desfixar=' + encodeURIComponent(chave))
+          : ('/api/admin/vip?id=' + encodeURIComponent(chave));
+        var r = await fetch(url, { cache:'no-store' });
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        await carregar();
+      }catch(e){ alert('Não foi possível alterar: ' + e.message); }
+    };
+    pc.appendChild(botao);
   });
 
   var box = $('eventos'); box.innerHTML = '';

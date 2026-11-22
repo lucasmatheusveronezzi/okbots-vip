@@ -2,8 +2,37 @@ services:
   - type: web
     name: okbots-vip
     env: node
-    region: frankfurt
     plan: free
-    buildCommand: npm install
-    startCommand: npm start
-    healthCheckPath: /api/public
+    region: frankfurt
+    buildCommand: npm install --production
+    startCommand: node ok-bots-vip-server.js
+    healthCheckPath: /api/stats
+    envVars:
+      - key: NODE_VERSION
+        value: 18
+      - key: MAX_BOTS_GLOBAL
+        value: 4000
+      - key: MAX_BOTS_POR_SESSAO
+        value: 1000
+      - key: OKBOTS_VIP_TODOS
+        value: 1
+      - key: OKBOTS_SO_PROXY_PAGO
+        value: 1
+      - key: OKBOTS_IP_DIRETO
+        value: 0
+      - key: OKBOTS_MAX_FOODS_POR_BOT
+        value: 200
+      - key: OKBOTS_MAX_MORTES_POR_BOT
+        value: 50
+      - key: OKBOTS_MAX_PONTOS_CORPO
+        value: 30
+      - key: OKBOTS_MAX_SCAN_AGRUPAMENTO
+        value: 100
+      - key: OKBOTS_MAX_CORPOS_RASTREADOS
+        value: 20
+      - key: OKBOTS_SPAWN_INTERVAL_MS
+        value: 15
+      - key: OKBOTS_DONO_FILE
+        value: ./dono_fixo.txt
+      - key: OKBOTS_PROXY_AUTH_CONTEUDO
+        sync: false

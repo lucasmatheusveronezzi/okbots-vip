@@ -12,6 +12,15 @@ function getRandomInt(min, max) {
     return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
+// Limites de memoria por bot. O padrao preserva o comportamento do servidor
+// local. Na nuvem (container free de 524 MB) usamos valores menores via env:
+// 700 bots x 7500 comidas passa de 5 milhoes de objetos e mata o container.
+const MAX_FOODS_POR_BOT = Math.max(200, parseInt(process.env.OKBOTS_MAX_FOODS_POR_BOT || '7500', 10) || 7500);
+const MAX_MORTES_POR_BOT = Math.max(50, parseInt(process.env.OKBOTS_MAX_MORTES_POR_BOT || '600', 10) || 600);
+const MAX_PONTOS_CORPO = Math.max(30, parseInt(process.env.OKBOTS_MAX_PONTOS_CORPO || '140', 10) || 140);
+const MAX_SCAN_AGRUPAMENTO = Math.max(100, parseInt(process.env.OKBOTS_MAX_SCAN_AGRUPAMENTO || '2000', 10) || 2000);
+const MAX_CORPOS_RASTREADOS = Math.max(20, parseInt(process.env.OKBOTS_MAX_CORPOS_RASTREADOS || '400', 10) || 400);
+
 function getHost(a) {
     // Servidores custom podem usar hostname (nao apenas IP). O codigo antigo
     // usava classes de caracteres (/[/slither]/g) e corrompia o Host header.
@@ -54,22 +63,59 @@ function _okIsCustomServer(url) {
     return false;
 }
 
+// Aceita ip:porta, ip:porta:tipo e usuario:senha@host:porta[:tipo].
+// A credencial vem do arquivo local, nunca do codigo ou do chat.
+function _okParseProxy(b) {
+    const _s = String(b || '').trim();
+    let _user = null;
+    let _pass = null;
+    let _endereco = _s;
+    const _at = _s.lastIndexOf('@');
+    if (_at !== -1) {
+        const _cred = _s.slice(0, _at);
+        const _sep = _cred.indexOf(':');
+        if (_sep !== -1) {
+            _user = _cred.slice(0, _sep);
+            _pass = _cred.slice(_sep + 1);
+        }
+        _endereco = _s.slice(_at + 1);
+    }
+    const _p = _endereco.split(':');
+    const _tipo = _p.length >= 3 ? (parseInt(_p[2], 10) || 5) : 0;
+    return {
+        host: _p[0],
+        port: parseInt(_p[1], 10),
+        tipo: _tipo,
+        user: _user,
+        pass: _pass
+    };
+}
+
 function createAgent(b) {
     const Socks = require('socks');
-    let proxy = b.split(':');
-    return new Socks.Agent({
-        proxy: {
-            ipaddress: proxy[0],
-            port: parseInt(proxy[1]),
-            type: parseInt(proxy[2]) || 5
-        }
-    });
+    const _p = _okParseProxy(b);
+    const _proxy = {
+        ipaddress: _p.host,
+        port: _p.port,
+        type: _p.tipo || 5
+    };
+    // O pacote socks suporta usuario/senha em SOCKS4 e SOCKS5 (userId/password).
+    if (_p.user !== null) {
+        _proxy.userId = _p.user;
+        _proxy.password = _p.pass || '';
+    }
+    return new Socks.Agent({ proxy: _proxy });
 }
 
 function createHttpAgent(b) {
     const HttpsProxyAgent = require('https-proxy-agent');
-    var proxy = b.split(':');
-    return new HttpsProxyAgent("http://" + proxy[0] + ":" + proxy[1]);
+    const _p = _okParseProxy(b);
+    let _url = 'http://' + _p.host + ':' + _p.port;
+    if (_p.user !== null) {
+        // https-proxy-agent v2 usa url.parse() e reenvia proxy.auth em Base64.
+        _url = 'http://' + _p.user + ':' + (_p.pass || '') + '@' + _p.host + ':' + _p.port;
+    }
+    return new HttpsProxyAgent(_url);
 }
 
 function Bot(id) {
@@ -180,6 +226,9 @@ Bot.prototype = {
     snakeID: null,
     snakeX: 0,
     snakeY: 0,
+    // So atualiza posicoes relativas (G/N) depois que uma posicao ABSOLUTA
+    // foi recebida. Sem isso, bots que nao recebem 'g'/'n' ficam em (0,0).
+    snakePosKnown: false,
     headX: 0,
     headY: 0,
     snakeAngle: 0,
@@ -207,19 +256,68 @@ Bot.prototype = {
             this._ping251Interval = null;
         }
     },
+
+    // Inicia o loop de movimento ASSIM que o bot recebe o snakeID. Antes so
+    // era iniciado no packet 'a': bots que nao recebiam 'a' ficavam parados e
+    // nao seguiam o jogador. Chamar duas vezes e seguro (para o anterior).
+    _startMoveLoop: function() {
+        if (!this.haveSnakeID) return;
+        this._stopRuntimeTimers();
+        var self = this;
+        this._moveLoopStopped = false;
+        this._moveLoopDelay = this._moveLoopDelay || 180;
+        function _tick() {
+            if (self._moveLoopStopped) return;
+            if (self.client && self.botManager) {
+                try { self.client.moveTo(self.botManager.xPos, self.botManager.yPos); } catch (e) {}
+            }
+            self._moveLoopTimer = setTimeout(_tick, self._moveLoopDelay);
+        }
+        _tick();
+        this._moveLoopSpeedTimer = setTimeout(function() {
+            self._moveLoopDelay = 190;
+        }, 60 * 1000);
+        this._ping251Interval = setInterval(function() {
+            self.send(Buffer.from([251]));
+        }, 150);
+    },
     
     connect: function() {
+        this._bmDesconectado = false;
         const _0x3a1b = Math.random() >= 0.5;
         // Servidores custom locais/privados nao podem ser alcancados pelos
         // proxies publicos do config: conecta direto nesses casos.
-        const direct = this.bypassProxy || _okIsLocalServer(this.server) ||
-            !(this.proxies && this.proxies.length) || !(this.Proxies && this.Proxies.length);
+        const _lista = (this.Proxies && this.Proxies.length) ? this.Proxies
+            : ((this.proxies && this.proxies.length) ? this.proxies : []);
+        const direct = this.bypassProxy || _okIsLocalServer(this.server) || !_lista.length;
         let agent;
         if (!direct) {
-            agent = _0x3a1b ? createAgent(this.proxies[~~(Math.random() * this.proxies.length)]) : createHttpAgent(this.Proxies[~~(Math.random() * this.Proxies.length)]);
+            // Lista mista: SOCKS vem como ip:porta:tipo; HTTP como ip:porta.
+            // O manager tira da roleta os proxies que falharam agora pouco.
+            let _escolhido = null;
+            if (this.botManager && typeof this.botManager._0xgetProxy === 'function') {
+                _escolhido = this.botManager._0xgetProxy();
+            }
+            if (!_escolhido || !_lista.length) _escolhido = _lista[~~(Math.random() * _lista.length)];
+            this._proxyUsado = _escolhido;
+            //usuario:senha@host:porta tem 4 pedacos, mas e HTTP. O tipo vem do
+            //parser, nao da contagem de ':'.
+            const _ehSocks = _okParseProxy(_escolhido).tipo > 0;
+            agent = _ehSocks ? createAgent(_escolhido) : createHttpAgent(_escolhido);
+        } else {
+            this._proxyUsado = null;
         }
+        this._agentUsado = agent ? 'proxy' : 'direto';
+        try {
+            const _BM = require('./BotManager');
+            if (_BM._registrarDebugBot) _BM._registrarDebugBot('connect ' + this._agentUsado + ' -> ' + this.server);
+        } catch (_e) {}
         
         this.ws = new WebSocket(this.server, {
+            // Proxy que nao completa o handshake deve falhar rapido e ser trocado.
+            // 3s em vez de 5s: libera o slot para tentar outro proxy antes.
+            // No IP direto o handshake vem da propria maquina: espera mais.
+            handshakeTimeout: this.bypassProxy ? 10000 : 3000,
             headers: {
                 'Origin': this.origin,
                 'Accept-Encoding': 'gzip, deflate',
@@ -330,6 +428,9 @@ Bot.prototype = {
             buf = new Uint8Array(head.concat(nameBytes).concat([0, 255]).concat(skin));
         } else {
             // Layout NTL v11/v12/v14: [115, protocolo, skinId, nameLen, nome..., 0, cosmetico, skin...]
+            // O byte do protocolo no spawn e 11 apenas quando o cliente detectou
+            // 11; nos demais casos o servidor do jogo aceita 14 (inclusive quando
+            // o cliente detectou 12). Forcar 12 aqui derruba o spawn.
             var protocol = this.protocol === 11 ? 11 : 14;
             buf = new Uint8Array([115, protocol, 0, nameBytes.length].concat(nameBytes).concat([0, cosmetic]).concat(skin));
         }
@@ -368,10 +469,17 @@ Bot.prototype = {
     },
 
     setTornadoSettings: function(settings) {
-        this.tornadoSize = settings.size || 2000;
-        this.tornadoSeparation = settings.separation || 800;
-        this.tornadoFinalAngle = settings.finalAng || 90;
-        this.tornadoRateOfChange = settings.rOC || 0.5;
+        // NAO usar `||`: valores validos como 0 (separacao/angulo/ROC) cairiam
+        // no default e o usuario acharia que o campo nao funciona.
+        function num(value, def, min) {
+            if (typeof value === 'string') value = value.replace(',', '.');
+            var n = parseFloat(value);
+            return isFinite(n) && n >= min ? n : def;
+        }
+        this.tornadoSize = num(settings.size, 2000, 1);
+        this.tornadoSeparation = num(settings.separation, 800, 0);
+        this.tornadoFinalAngle = num(settings.finalAng, 90, 0);
+        this.tornadoRateOfChange = num(settings.rOC, 0.5, 0);
         // 0 = CCW (inverte o angulo); 1 = CW (sentido padrao).
         this.tornadoRotationDir = Number(settings.rotationDir) === 0 ? 0 : 1;
     },
@@ -678,6 +786,12 @@ Bot.prototype = {
     },
 
     onOpen: function(b) {
+        // Se o stop chegou enquanto o socket ainda abria, nao entra no jogo.
+        if (this._bmDesconectado) { this.disconnect(); return; }
+        try {
+            const _BM = require('./BotManager');
+            if (_BM._registrarDebugBot) _BM._registrarDebugBot('onOpen OK -> ' + this.server);
+        } catch (_e) {}
         if (this.botManager && this.botManager.getConnectedCount() >= this.botManager.botCount) {
             this.disconnect();
             return;
@@ -702,6 +816,9 @@ Bot.prototype = {
         }
         this.hasConnected = true;
         if (this.botManager) {
+            if (typeof this.botManager._0xproxyFuncionou === 'function') {
+                this.botManager._0xproxyFuncionou(this._proxyUsado);
+            }
             this.botManager.incrementConnectedCount();
         }
         // Boost so e ligado quando a cobra ja existe (haveSnakeID). Antes o
@@ -725,19 +842,31 @@ Bot.prototype = {
         }
         this.needPing = false;
         this.haveSnakeID = false;
-        if (this.botManager) {
+        // Guarda o manager localmente: decrementConnectedCount pode disparar o
+        // reparo automatico, que chama disconnect() e anula this.botManager.
+        const _bmClose = this.botManager;
+        if (_bmClose) {
             if (this.hasConnected) {
-                this.botManager.decrementConnectedCount();
+                _bmClose.decrementConnectedCount();
+            } else if (typeof _bmClose._0xproxyFalhou === 'function') {
+                _bmClose._0xproxyFalhou(this._proxyUsado);
             }
             this.hasConnected = false;
-            if (typeof this.botManager._0xremoveBot === 'function') {
-                this.botManager._0xremoveBot(this);
+            if (typeof _bmClose._0xremoveBot === 'function') {
+                _bmClose._0xremoveBot(this);
             }
         }
         setTimeout(function() {}, 200);
     },
 
     onError: function(e) {
+        if (!this.hasConnected && this.botManager && typeof this.botManager._0xproxyFalhou === 'function') {
+            this.botManager._0xproxyFalhou(this._proxyUsado);
+        }
+        try {
+            const _BM = require('./BotManager');
+            if (_BM._registrarDebugBot) _BM._registrarDebugBot('onError ' + (e && e.message ? e.message : e) + ' | ' + this.server + ' | ' + this._agentUsado);
+        } catch (_e) {}
         this.needPing = false;
         this._stopRuntimeTimers();
         this.isBoosting = false;
@@ -748,16 +877,17 @@ Bot.prototype = {
         if (this.ws) {
             try { this.ws.terminate(); } catch (_0xerr) {}
         }
-        if (this.botManager) {
+        const _bmError = this.botManager;
+        if (_bmError) {
             // Erro depois do onOpen precisa liberar o contador aqui tambem:
             // se o "close" nao chegar, o slot ficaria inflado e a reposicao
             // pararia de criar bots novos.
             if (this.hasConnected) {
-                this.botManager.decrementConnectedCount();
+                _bmError.decrementConnectedCount();
             }
             this.hasConnected = false;
-            if (typeof this.botManager._0xremoveBot === 'function') {
-                this.botManager._0xremoveBot(this);
+            if (typeof _bmError._0xremoveBot === 'function') {
+                _bmError._0xremoveBot(this);
             }
         }
     },
@@ -849,11 +979,10 @@ Bot.prototype = {
         } catch (e) {}
     },
 
-    // Boost 100% continuo: ligado enquanto a tecla E estiver ativa e a cobra
-    // existir. Nao existe ciclo, pausa, distancia ou limite de massa.
-    // A cada 2s o [253] e reafirmado: isso garante que TODOS os bots fiquem
-    // acelerando juntos, mesmo se um pacote se perdeu ou o estado do servidor
-    // ficou preso. Reafirmar nunca desliga o boost (so o [254] desliga).
+    // Boost da tecla E: reafirma o [253] em intervalos LONGOS e espalhados
+    // (8s + ate 5s de atraso por bot). Assim TODOS os bots ficam acelerando,
+    // sem a tempestade de pacotes do reenvio antigo a cada 2s que derrubava
+    // conexoes e reduzia a quantidade.
     _0xupdateBoost: function() {
         var live = !!(this.ws && this.ws.readyState === WebSocket.OPEN && this.haveSnakeID);
         // O BotManager e a fonte unica do estado da tecla E. Bots que nacem
@@ -868,10 +997,16 @@ Bot.prototype = {
             this._0xsetBoost(false);
             return;
         }
-        if (this.isBoosting && Date.now() - (this._boostSentAt || 0) < 2000) return;
-        this.isBoosting = true;
-        this._boostSentAt = Date.now();
-        try { this.send(Buffer.from([253])); } catch (e) {}
+        if (this._boostJitter === undefined) this._boostJitter = Math.floor(Math.random() * 5000);
+        var _agora = Date.now();
+        if (this.isBoosting && _agora - (this._boostSentAt || 0) < 8000 + this._boostJitter) return;
+        // So marca como ativo DEPOIS que o pacote realmente sai: se o envio
+        // falhar, a proxima tentativa (300ms depois) corrige o estado.
+        try {
+            this.send(Buffer.from([253]));
+            this.isBoosting = true;
+            this._boostSentAt = _agora;
+        } catch (e) {}
     },
 
     boostSpeed: function(shouldBoost) {
@@ -882,31 +1017,38 @@ Bot.prototype = {
 
 
     disconnect: function() {
+        // Marca ANTES de fechar: um WebSocket em CONNECTING pode abrir depois
+        // do close() e, sem esta bandeira, continuaria jogando como bot orfao
+        // mesmo depois da sessao ter desligado.
+        this._bmDesconectado = true;
         this._stopRuntimeTimers();
-        if (this.ws) {
-            // close() pode lancar em socket ainda CONNECTING/terminated; nao
-            // pode impedir a liberacao do contador e do slot de reposicao.
-            try { this.ws.close(); } catch (e) {}
-        }
-        this.haveSnakeID = false;
-        if (this.botManager) {
-            if (this.hasConnected) {
-                this.botManager.decrementConnectedCount();
-            }
-            this.hasConnected = false;
-            if (typeof this.botManager._0xremoveBot === 'function') {
-                this.botManager._0xremoveBot(this);
-            }
-            this.botManager = null;
-        }
-        this.isBoosting = false;
         if (this.boostInterval) {
             clearInterval(this.boostInterval);
             this.boostInterval = null;
         }
+        if (this.ws) {
+            // terminate() fecha na hora mesmo em CONNECTING. close() so nao
+            // garante e deixa o bot entrar no jogo apos o stop.
+            try { this.ws.terminate(); } catch (e) {}
+            try { this.ws.close(); } catch (e) {}
+            this.ws = null;
+        }
+        this.haveSnakeID = false;
+        const _bmDisc = this.botManager;
+        const _tinhaConexao = !!this.hasConnected;
+        this.hasConnected = false;
+        if (_bmDisc) {
+            if (_tinhaConexao) _bmDisc.decrementConnectedCount();
+            if (typeof _bmDisc._0xremoveBot === 'function') {
+                _bmDisc._0xremoveBot(this);
+            }
+            this.botManager = null;
+        }
+        this.isBoosting = false;
     },
 
     onMessage: function(b) {
+        if (this._bmDesconectado) return;
         this.client = this;
         this._processFrame(new Uint8Array(b.data));
     },
@@ -1011,7 +1153,7 @@ Bot.prototype = {
             var f = this.foods[i];
             if (!f.dead && now - f.t < 60000) alive.push(f);
         }
-        if (alive.length > 7500) alive = alive.slice(-7500);
+        if (alive.length > MAX_FOODS_POR_BOT) alive = alive.slice(-MAX_FOODS_POR_BOT);
         this.foods = alive;
         this.foodById = Object.create(null);
         for (var j = 0; j < alive.length; j++) {
@@ -1020,6 +1162,28 @@ Bot.prototype = {
         for (var key in this.snakeBodies) {
             var b = this.snakeBodies[key];
             if (!b || !b.pts.length || now - b.last > 8000) delete this.snakeBodies[key];
+        }
+        // Mantem apenas as cobras mais proximas: obstacle avoidance so usa o
+        // raio de 1800. Sem isso, 700 bots guardam milhoes de pontos de corpos
+        // que nunca vao ser usados e o container estoura a memoria.
+        var corpoKeys = Object.keys(this.snakeBodies);
+        if (corpoKeys.length > MAX_CORPOS_RASTREADOS) {
+            var euKey = String(this.snakeID);
+            var hx0 = this.snakeX, hy0 = this.snakeY;
+            corpoKeys.sort(function (ka, kb) {
+                if (ka === euKey) return -1;
+                if (kb === euKey) return 1;
+                var pa = this.snakeBodies[ka].pts;
+                var pb = this.snakeBodies[kb].pts;
+                var la = pa && pa.length ? pa[pa.length - 1] : null;
+                var lb = pb && pb.length ? pb[pb.length - 1] : null;
+                var da = la ? (la.x - hx0) * (la.x - hx0) + (la.y - hy0) * (la.y - hy0) : Infinity;
+                var db = lb ? (lb.x - hx0) * (lb.x - hx0) + (lb.y - hy0) * (lb.y - hy0) : Infinity;
+                return da - db;
+            }.bind(this));
+            for (var ci = MAX_CORPOS_RASTREADOS; ci < corpoKeys.length; ci++) {
+                delete this.snakeBodies[corpoKeys[ci]];
+            }
         }
         var deaths = [];
         for (var d = 0; d < this._recentDeaths.length; d++) {
@@ -1258,9 +1422,9 @@ Bot.prototype = {
             if (pv >= 15 && m + 2 === alen) break; // ultimos 2 bytes = iang
             x += (this._pb(pkt, m++) - 127) / 2;
             y += (this._pb(pkt, m++) - 127) / 2;
-            if (pts.length < 200) pts.push({ x: x, y: y, t: now });
+            if (pts.length < MAX_PONTOS_CORPO + 60) pts.push({ x: x, y: y, t: now });
         }
-        if (pts.length > 140) pts = pts.slice(-140);
+        if (pts.length > MAX_PONTOS_CORPO) pts = pts.slice(-MAX_PONTOS_CORPO);
         this.snakeBodies[String(id)] = { pts: pts, last: now };
     },
 
@@ -1330,7 +1494,7 @@ Bot.prototype = {
         }
         var now = Date.now();
         body.pts.push({ x: x, y: y, t: now });
-        if (body.pts.length > 140) body.pts.shift();
+        if (body.pts.length > MAX_PONTOS_CORPO) body.pts.shift();
         body.last = now;
     },
 
@@ -1360,8 +1524,8 @@ Bot.prototype = {
             this._recentDeaths.push({ x: head.x, y: head.y, t: now });
             this._markCorpseFoodNear(head.x, head.y, now);
         }
-        if (this._recentDeaths.length > 600) {
-            this._recentDeaths = this._recentDeaths.slice(-600);
+        if (this._recentDeaths.length > MAX_MORTES_POR_BOT) {
+            this._recentDeaths = this._recentDeaths.slice(-MAX_MORTES_POR_BOT);
         }
     },
 
@@ -1492,7 +1656,7 @@ Bot.prototype = {
             var b = this.snakeBodies[key];
             if (!b || now - b.last > 6000) continue;
             var pts = b.pts;
-            var start = Math.max(0, pts.length - 100);
+            var start = Math.max(0, pts.length - Math.min(100, MAX_PONTOS_CORPO));
             for (var i = start; i < pts.length; i++) {
                 var p = pts[i];
                 var px = p.x - hx, py = p.y - hy;
@@ -1587,7 +1751,7 @@ Bot.prototype = {
             // Igual ao auto-farm do NTL: preferir areas com varias comidas
             // juntas limpa o chao mais rapido do que ir de pellet em pellet.
             var cluster = 0;
-            var flim = Math.min(this.foods.length, 2000);
+            var flim = Math.min(this.foods.length, MAX_SCAN_AGRUPAMENTO);
             for (var nf = 0; nf < flim && cluster < 8; nf++) {
                 var other = this.foods[nf];
                 if (other === food || other.dead) continue;
@@ -1651,24 +1815,9 @@ Bot.prototype = {
                 this.needPing = true;
             } else if ("a" == _0x9e2f) {
                 this._parseConfigPacket(_0x4c8d);
-                this._stopRuntimeTimers();
-                var self = this;
-                this._moveLoopStopped = false;
-                this._moveLoopDelay = 180;
-                function _0x7f3a() {
-                    if (self._moveLoopStopped) return;
-                    if (self.client && self.botManager) { 
-                        self.client.moveTo(self.botManager.xPos, self.botManager.yPos);
-                    }
-                    self._moveLoopTimer = setTimeout(_0x7f3a, self._moveLoopDelay);
-                }
-                _0x7f3a();
-                this._moveLoopSpeedTimer = setTimeout(function() {
-                    self._moveLoopDelay = 190;
-                }, 60 * 1000);
-                this._ping251Interval = setInterval(function() {
-                    self.send(Buffer.from([251]));
-                }, 150);
+                // O loop ja pode ter sido iniciado no spawn; chamar de novo
+                // apenas reinicia com o delay padrao, sem duplicar timers.
+                this._startMoveLoop();
             } else if ("v" == _0x9e2f) {
                 this.haveSnakeID = false;
                 this.disconnect();
@@ -1677,6 +1826,7 @@ Bot.prototype = {
                 if (_0xpacketId == this.snakeID) {
                     this.snakeX = ((_0x4c8d[5] & 0xff) << 8) | (_0x4c8d[6] & 0xff);
                     this.snakeY = ((_0x4c8d[7] & 0xff) << 8) | (_0x4c8d[8] & 0xff);
+                    this.snakePosKnown = true;
                 }
                 if (this.killMode && this.targetPlayer && _0xpacketId != this.snakeID && _0xpacketId == this.targetPlayer.targetId) {
                     this.targetPrevX = this.targetX;
@@ -1694,6 +1844,7 @@ Bot.prototype = {
                 if (_0xpacketId == this.snakeID) {
                     this.snakeX = ((_0x4c8d[5] & 0xff) << 8) | (_0x4c8d[6] & 0xff);
                     this.snakeY = ((_0x4c8d[7] & 0xff) << 8) | (_0x4c8d[8] & 0xff);
+                    this.snakePosKnown = true;
                 }
                 if (this.killMode && this.targetPlayer && _0xpacketId != this.snakeID && _0xpacketId == this.targetPlayer.targetId) {
                     this.targetPrevX = this.targetX;
@@ -1709,13 +1860,13 @@ Bot.prototype = {
             } else if ("G" == _0x9e2f) {
                 var _0xpacketId = ((_0x4c8d[3] & 0xff) << 8 | (_0x4c8d[4] & 0xff));
                 if (_0xpacketId == this.snakeID) {
-                    if (this.snakeX && this.snakeY) {
+                    if (this.snakePosKnown && Number.isFinite(this.snakeX) && Number.isFinite(this.snakeY)) {
                         this.snakeX = _0x4c8d[5] - 128 + this.snakeX;
                         this.snakeY = _0x4c8d[6] - 128 + this.snakeY;
                     }
                 }
                 if (this.killMode && this.targetPlayer && _0xpacketId != this.snakeID && _0xpacketId == this.targetPlayer.targetId) {
-                    if (this.targetX && this.targetY) {
+                    if (Number.isFinite(this.targetX) && Number.isFinite(this.targetY)) {
                         this.targetPrevX = this.targetX;
                         this.targetPrevY = this.targetY;
                         this.targetX = _0x4c8d[5] - 128 + this.targetX;
@@ -1730,13 +1881,13 @@ Bot.prototype = {
             } else if ("N" == _0x9e2f) {
                 var _0xpacketId = ((_0x4c8d[3] & 0xff) << 8 | (_0x4c8d[4] & 0xff));
                 if (_0xpacketId == this.snakeID) {
-                    if (this.snakeX && this.snakeY) {
+                    if (this.snakePosKnown && Number.isFinite(this.snakeX) && Number.isFinite(this.snakeY)) {
                         this.snakeX = _0x4c8d[5] - 128 + this.snakeX;
                         this.snakeY = _0x4c8d[6] - 128 + this.snakeY;
                     }
                 }
                 if (this.killMode && this.targetPlayer && _0xpacketId != this.snakeID && _0xpacketId == this.targetPlayer.targetId) {
-                    if (this.targetX && this.targetY) {
+                    if (Number.isFinite(this.targetX) && Number.isFinite(this.targetY)) {
                         this.targetPrevX = this.targetX;
                         this.targetPrevY = this.targetY;
                         this.targetX = _0x4c8d[5] - 128 + this.targetX;
@@ -1786,7 +1937,11 @@ Bot.prototype = {
                     if (_0x4c8d.length >= 24) {
                         this.snakeX = ((_0x4c8d[18] << 16) | (_0x4c8d[19] << 8) | _0x4c8d[20]) / 5;
                         this.snakeY = ((_0x4c8d[21] << 16) | (_0x4c8d[22] << 8) | _0x4c8d[23]) / 5;
+                        this.snakePosKnown = true;
                     }
+                    // Nao espera o packet 'a': se ele nao chegar, o bot ainda
+                    // assim ja comeca a seguir o jogador.
+                    this._startMoveLoop();
                     
                     // Bot que nasceu com a tecla E ligada entra ja acelerando,
                     // mas somente agora que a cobra existe (haveSnakeID).
